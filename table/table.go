@@ -10,10 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v4/pgxpool"
 )
 
 var ctx = context.Background()
+
+var Records []map[string]any
 
 type Table struct {
 	// The source name of the table.
@@ -51,6 +53,8 @@ type parsedDataStruct struct {
 func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 	records, err := src.GetRecords(t.SrcName)
 
+	Records = records // Just in case it is needed
+
 	if err != nil {
 		if t.IgnoreMissing {
 			ui.NotifyMsg("info", "Table %s not found on source, skipping "+t.SrcName)
@@ -87,24 +91,25 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 
 		// Now add constraints
 		for _, c := range v.Constraints.Raw() {
-			_, err = pool.Exec(ctx, "ALTER TABLE "+t.DstName+" ADD CONSTRAINT "+v.DstName+"_"+c.Type+" "+c.SQL(v.DstName))
+			_, err = pool.Exec(ctx, "ALTER TABLE "+t.DstName+" ADD CONSTRAINT "+t.DstName+"_"+v.DstName+"_"+c.Type+" "+c.SQL(v.DstName))
 
 			if err != nil {
-				fmt.Println("ALTER TABLE " + t.DstName + " ADD CONSTRAINT " + v.DstName + "_" + c.Type + " " + c.SQL(v.DstName))
+				fmt.Println("ALTER TABLE " + t.DstName + " ADD CONSTRAINT " + t.DstName + "_" + v.DstName + "_" + c.Type + " " + c.SQL(v.DstName))
 				panic(err)
 			}
 		}
+	}
 
-		// Set default value
-		if v.GetDefault() != nil && v.GetDefault() != "SKIP" {
-			// Hacky but postgres doesnt seem to support parameters here
-			sql := "ALTER TABLE " + t.DstName + " ALTER COLUMN " + v.DstName + " SET DEFAULT $1"
-			_, err = pool.Exec(ctx, sql, v.GetDefault())
+	if len(t.IndexCols) > 0 {
+		// Create index on these columns
+		colList := strings.Join(t.IndexCols, ",")
+		indexName := t.DstName + "_migindex"
+		sqlStr := "CREATE INDEX " + indexName + " ON " + t.DstName + "(" + colList + ")"
 
-			if err != nil {
-				fmt.Println(sql, v.GetDefault())
-				panic(err)
-			}
+		_, pgerr := pool.Exec(ctx, sqlStr)
+
+		if pgerr != nil {
+			panic(pgerr)
 		}
 	}
 
@@ -120,18 +125,7 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 		var colNames []string = []string{}
 
 		for i, col := range t.Columns {
-			arg, ok := record[col.SrcName]
-
-			if arg == nil || !ok {
-				arg = col.GetDefault()
-
-				if arg == "SKIP" {
-					ui.NotifyMsg("warning", "Skipping row due to default value at iteration "+strconv.Itoa(count))
-					continue
-				} else if arg == "PANIC" {
-					panic("Panic due to default value at iteration " + strconv.Itoa(count))
-				}
-			}
+			arg := record[col.SrcName]
 
 			for _, transform := range col.Transforms {
 				arg = transform(record, arg)
@@ -141,6 +135,31 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 
 			if err == nil {
 				arg = extParsed
+			}
+
+			if arg == "none" {
+				arg = nil
+			}
+
+			if arg == nil {
+				if col.Default != nil {
+					arg = col.Default
+				}
+
+				if col.SQLDefault != "" && arg == nil {
+					arg = col.SQLDefault
+				}
+
+				if arg == "NULL" {
+					arg = nil
+				}
+
+				if arg == "SKIP" {
+					ui.NotifyMsg("warning", "Skipping row due to default value at iteration "+strconv.Itoa(count))
+					continue
+				} else if arg == "PANIC" {
+					panic("Panic due to default value at iteration " + strconv.Itoa(count) + " on column " + col.SrcName)
+				}
 			}
 
 			args = append(args, arg)
@@ -168,11 +187,11 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 				ui.NotifyMsg("warning", "Ignoring foreign key error on iter "+strconv.Itoa(i)+": "+err.Error())
 				continue
 			} else if t.IgnoreUniqueError && strings.Contains(err.Error(), "unique constraint") {
-				ui.NotifyMsg("warning", "Ignoring unique error on iter "+strconv.Itoa(count)+": "+err.Error())
+				ui.NotifyMsg("warning", "Ignoring unique error on iter "+strconv.Itoa(i)+": "+err.Error())
 				continue
 			}
 
-			ui.NotifyMsg("error", "Error on iter "+strconv.Itoa(count)+": "+err.Error())
+			ui.NotifyMsg("error", "Error on iter "+strconv.Itoa(i)+": "+err.Error())
 
 			panic(err.Error() + ":" + data.SQL)
 		}

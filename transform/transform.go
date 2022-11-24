@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func ToList(v any) []any {
+func ToList(record map[string]any, v any) any {
 	var res = []any{}
 	casted, ok := v.(string)
 
@@ -24,7 +24,7 @@ func ToList(v any) []any {
 	return res
 }
 
-func ToTimestamp(res any) any {
+func ToTimestamp(record map[string]any, res any) any {
 	if resCast, ok := res.(int64); ok {
 		res = time.UnixMilli(resCast)
 	} else if resCast, ok := res.(float64); ok {

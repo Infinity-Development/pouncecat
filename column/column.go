@@ -1,5 +1,10 @@
 package column
 
+import (
+	"fmt"
+	"time"
+)
+
 type ColumnType int
 
 const (
@@ -13,6 +18,7 @@ const (
 )
 
 const NoDefault = "PANIC"
+const ArrayJSONDefault = "{}"
 
 type Transform func(record map[string]any, col any) any
 
@@ -78,16 +84,23 @@ type Column struct {
 	Transforms []Transform
 }
 
-func (c *Column) GetDefault() any {
+func (c *Column) GetDefault() string {
 	if c.Default != nil {
-		return c.Default
+		switch casted := c.Default.(type) {
+		case string:
+			return fmt.Sprintf("'%v'", casted)
+		case time.Time:
+			return fmt.Sprintf("'%v'", casted.Format(time.RFC3339))
+		default:
+			return fmt.Sprintf("%v", casted)
+		}
 	}
 
 	if c.SQLDefault != "" {
 		return c.SQLDefault
 	}
 
-	return nil
+	return ""
 }
 
 func (c *Column) BaseType() string {
@@ -101,7 +114,7 @@ func (c *Column) BaseType() string {
 	case ColumnTypeBool:
 		return "bool"
 	case ColumnTypeTimestamp:
-		return "timestamp"
+		return "timestamptz"
 	case ColumnTypeJSONB:
 		return "jsonb"
 	case ColumnTypeUUID:
@@ -124,6 +137,11 @@ func (c *Column) Meta() []string {
 	if !c.Nullable {
 		meta = append(meta, "NOT NULL")
 	}
+
+	if (c.Default != nil && c.Default != "SKIP") || c.SQLDefault != "" {
+		meta = append(meta, "DEFAULT "+c.GetDefault())
+	}
+
 	return meta
 }
 
@@ -191,50 +209,44 @@ func NewBigInt(srcName, dstName string, defValue any, transforms ...Transform) *
 }
 
 func NewBool(srcName, dstName string, defValue bool, transforms ...Transform) *Column {
-	bstr := "false"
-
-	if defValue {
-		bstr = "true"
-	}
-
 	return &Column{
 		Type:        ColumnTypeBool,
 		SrcName:     srcName,
 		DstName:     dstName,
-		Default:     bstr,
+		Default:     defValue,
 		Transforms:  transforms,
 		Constraints: &Constraints{},
 	}
 }
 
-func NewTimestamp(srcName, dstName string, defValue any, transforms ...Transform) *Column {
+func NewTimestamp(srcName, dstName string, defValue string, transforms ...Transform) *Column {
 	return &Column{
 		Type:        ColumnTypeTimestamp,
 		SrcName:     srcName,
 		DstName:     dstName,
-		Default:     defValue,
+		SQLDefault:  defValue,
 		Transforms:  transforms,
 		Constraints: &Constraints{},
 	}
 }
 
-func NewJSONB(srcName, dstName string, defValue any, transforms ...Transform) *Column {
+func NewJSONB(srcName, dstName string, transforms ...Transform) *Column {
 	return &Column{
 		Type:        ColumnTypeJSONB,
 		SrcName:     srcName,
 		DstName:     dstName,
-		Default:     defValue,
+		Default:     "{}",
 		Transforms:  transforms,
 		Constraints: &Constraints{},
 	}
 }
 
-func NewUUID(srcName, dstName string, defValue any, transforms ...Transform) *Column {
+func NewUUID(srcName, dstName string, defValue string, transforms ...Transform) *Column {
 	return &Column{
 		Type:        ColumnTypeUUID,
 		SrcName:     srcName,
 		DstName:     dstName,
-		Default:     defValue,
+		SQLDefault:  defValue,
 		Transforms:  transforms,
 		Constraints: &Constraints{},
 	}

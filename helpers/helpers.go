@@ -2,7 +2,10 @@
 package helpers
 
 import (
+	"io"
 	"math/rand"
+	"net/http"
+	"pouncecat/ui"
 	"time"
 	"unsafe"
 )
@@ -34,4 +37,49 @@ func RandString(n int) string {
 	}
 
 	return *(*string)(unsafe.Pointer(&b))
+}
+
+func PromptServerChannel(message string) string {
+	ui.NotifyMsg("info", "To continue, please send an input to the following question to http://localhost:34012/msg: "+message)
+	channel := make(chan string)
+
+	killChan := make(chan bool)
+
+	go func() {
+		r := http.NewServeMux()
+
+		srv := &http.Server{Addr: ":34012", Handler: r}
+
+		r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte(message))
+		})
+
+		r.HandleFunc("/msg", func(w http.ResponseWriter, r *http.Request) {
+			// Read body
+			body, err := io.ReadAll(r.Body)
+
+			if err != nil {
+				w.Write([]byte("Error reading body"))
+				return
+			}
+
+			channel <- string(body)
+		})
+
+		go srv.ListenAndServe()
+
+		<-killChan
+
+		ui.NotifyMsg("info", "Closing server")
+
+		srv.Close()
+	}()
+
+	id := <-channel
+
+	ui.NotifyMsg("info", "Received input: "+id)
+
+	killChan <- true
+
+	return id
 }
