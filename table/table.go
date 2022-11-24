@@ -124,7 +124,8 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 		var argQuotes []string = []string{}
 		var colNames []string = []string{}
 
-		for i, col := range t.Columns {
+		var realI int
+		for _, col := range t.Columns {
 			arg := record[col.SrcName]
 
 			for _, transform := range col.Transforms {
@@ -141,6 +142,13 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 				arg = nil
 			}
 
+			var panicF bool
+
+			if arg == "PANIC" {
+				arg = nil
+				panicF = true
+			}
+
 			if arg == nil {
 				if col.Default != nil {
 					arg = col.Default
@@ -154,16 +162,21 @@ func (t Table) Migrate(src source.Source, pool *pgxpool.Pool) {
 					arg = nil
 				}
 
+				if arg == "uuid_generate_v4()" {
+					continue
+				}
+
 				if arg == "SKIP" {
 					ui.NotifyMsg("warning", "Skipping row due to default value at iteration "+strconv.Itoa(count))
-					continue
-				} else if arg == "PANIC" {
+					break
+				} else if panicF {
 					panic("Panic due to default value at iteration " + strconv.Itoa(count) + " on column " + col.SrcName)
 				}
 			}
 
 			args = append(args, arg)
-			argQuotes = append(argQuotes, "$"+strconv.Itoa(i+1))
+			argQuotes = append(argQuotes, "$"+strconv.Itoa(realI+1))
+			realI++
 			colNames = append(colNames, col.DstName)
 		}
 

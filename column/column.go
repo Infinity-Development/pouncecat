@@ -85,6 +85,10 @@ type Column struct {
 }
 
 func (c *Column) GetDefault() string {
+	if c.Default == NoDefault {
+		return ""
+	}
+
 	if c.Default != nil {
 		switch casted := c.Default.(type) {
 		case string:
@@ -139,7 +143,11 @@ func (c *Column) Meta() []string {
 	}
 
 	if (c.Default != nil && c.Default != "SKIP") || c.SQLDefault != "" {
-		meta = append(meta, "DEFAULT "+c.GetDefault())
+		getDef := c.GetDefault()
+
+		if getDef != "" {
+			meta = append(meta, "DEFAULT "+getDef)
+		}
 	}
 
 	return meta

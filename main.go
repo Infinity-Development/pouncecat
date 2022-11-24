@@ -822,10 +822,10 @@ func main() {
 				column.Dest("user_id"),
 				column.NoDefault,
 			).SetForeignKey([2]string{"users", "user_id"}),
-			column.NewText(
+			column.NewUUID(
 				column.Source("announceID"),
 				column.Dest("id"),
-				nil,
+				"NULL",
 			).SetSQLDefault("uuid_generate_v4()"),
 			column.NewText(
 				column.Source("title"),
@@ -950,8 +950,9 @@ func main() {
 	}.Migrate(source, pool)
 
 	table.Table{
-		SrcName: "reviews",
-		DstName: "reviews",
+		SrcName:       "reviews",
+		DstName:       "reviews",
+		IgnoreFKError: true,
 		Columns: column.Columns(
 			/*
 				ID pgtype.UUID `bson:"_id" json:"id" default:"uuid_generate_v4()"`
@@ -965,8 +966,8 @@ func main() {
 			column.NewUUID(
 				column.Source("id"),
 				column.Dest("id"),
-				"uuid_generate_v4()",
-			),
+				"NULL",
+			).SetSQLDefault("uuid_generate_v4()"),
 			column.NewText(
 				column.Source("botID"),
 				column.Dest("bot_id"),
@@ -993,11 +994,128 @@ func main() {
 				"NOW()",
 				transform.ToTimestamp,
 			),
+		),
+	}.Migrate(source, pool)
+
+	table.Table{
+		SrcName: "replies",
+		DstName: "replies",
+		Columns: column.Columns(
+			column.NewUUID(
+				column.Source("id"),
+				column.Dest("id"),
+				"NULL",
+			).SetSQLDefault("uuid_generate_v4()"),
+			column.NewText(
+				column.Source("author"),
+				column.Dest("author"),
+				column.NoDefault,
+			).SetForeignKey([2]string{"users", "user_id"}),
+			column.NewText(
+				column.Source("content"),
+				column.Dest("content"),
+				"Very good bot!",
+			),
+			column.NewInt(
+				column.Source("star_rate"),
+				column.Dest("star_rate"),
+				5,
+			),
+			column.NewTimestamp(
+				column.Source("date"),
+				column.Dest("created_at"),
+				"NOW()",
+				transform.ToTimestamp,
+			),
 			column.NewUUID(
 				column.Source("parent"),
 				column.Dest("parent"),
+				column.NoDefault,
+			).SetForeignKey([2]string{"reviews", "id"}),
+		),
+	}.Migrate(source, pool)
+
+	table.Table{
+		SrcName: "tickets",
+		DstName: "tickets",
+		Columns: column.Columns(
+			/*
+				ChannelID      string    `bson:"channelID" json:"channel_id"`
+				Topic          string    `bson:"topic" json:"topic" default:"'Support'"`
+				UserID         string    `bson:"userID" json:"user_id"` // No fkey here bc a user may not be a user on the table yet
+				TicketID       int       `bson:"ticketID" json:"id" unique:"true"`
+				LogURL         string    `bson:"logURL,omitempty" json:"log_url" default:"null"`
+				CloseUserID    string    `bson:"closeUserID,omitempty" json:"close_user_id" default:"null"`
+				Open           bool      `bson:"open" json:"open" default:"true"`
+				Date           time.Time `bson:"date" json:"date" default:"NOW()"`
+				PanelMessageID string    `bson:"panelMessageID,omitempty" json:"panel_message_id" default:"null"`
+				PanelChannelID string    `bson:"panelChannelID,omitempty" json:"panel_channel_id" default:"null"`
+			*/
+
+			column.NewText(
+				column.Source("channelID"),
+				column.Dest("channel_id"),
+				column.NoDefault,
+			),
+			column.NewText(
+				column.Source("topic"),
+				column.Dest("topic"),
+				"Support",
+			),
+			column.NewText(
+				column.Source("userID"),
+				column.Dest("user_id"),
+				column.NoDefault,
+			),
+			column.NewInt(
+				column.Source("ticketID"),
+				column.Dest("id"),
+				column.NoDefault,
+			).SetUnique(true),
+			column.NewText(
+				column.Source("logURL"),
+				column.Dest("log_url"),
 				"NULL",
-			).SetNullable(true).SetForeignKey([2]string{"reviews", "id"}),
+			).SetNullable(true),
+			column.NewText(
+				column.Source("closeUserID"),
+				column.Dest("close_user_id"),
+				"NULL",
+			).SetNullable(true),
+			column.NewBool(
+				column.Source("open"),
+				column.Dest("open"),
+				true,
+			),
+			column.NewTimestamp(
+				column.Source("date"),
+				column.Dest("created_at"),
+				"NOW()",
+				transform.ToTimestamp,
+			),
+			column.NewText(
+				column.Source("panelMessageID"),
+				column.Dest("panel_message_id"),
+				"NULL",
+			).SetNullable(true),
+			column.NewText(
+				column.Source("panelChannelID"),
+				column.Dest("panel_channel_id"),
+				"NULL",
+			).SetNullable(true),
+		),
+	}.Migrate(source, pool)
+
+	table.Table{
+		SrcName: "transcripts",
+		DstName: "transcripts",
+		Columns: column.Columns(
+		/*
+			TicketID int            `bson:"ticketID" json:"id" fkey:"tickets,id"`
+			Data     map[string]any `bson:"data" json:"data" default:"{}"`
+			ClosedBy map[string]any `bson:"closedBy" json:"closed_by" default:"{}"`
+			OpenedBy map[string]any `bson:"openedBy" json:"opened_by" default:"{}"`
+		*/
 		),
 	}.Migrate(source, pool)
 }
